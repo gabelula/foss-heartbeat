@@ -35,6 +35,7 @@ from ghstats import issueDir
 from operator import itemgetter
 import os
 import re
+import json
 import argparse
 from datetime import datetime
 
@@ -67,9 +68,8 @@ def createReviewerDict(repoPath, fileList):
                  datetime.strptime(x.split('\t')[1], "%Y-%m-%dT%H:%M:%SZ"),
                  x.split('\t')[2])
                 for x in lines if len(x.split('\t')) > 3]
-    contribs = sorted(contribs, key=itemgetter(1))
     for c in contribs:
-        contribDict.setdefault( c[0], [] ).append((c[1], c[2]))
+        contribDict[c[0]] = [(c[1], c[2])]
     return contribDict
 
 def createCommentDict(repoPath):
@@ -89,6 +89,8 @@ def main():
     parser.add_argument('--skip', help='if this python regex is matched, ignore this comment', type=str, default=None)
     parser.add_argument('--num', help='number of contributions that are considered a success', type=int, default=1)
     parser.add_argument('--reporters', help='intead of looking and PR submitters and reviewers, look at bug reporters and responders', type=bool, default=False)
+    parser.add_argument('--printmissing', help="print issues where contributors didn't experience the word", type=bool, default=False)
+    parser.add_argument('--skipopen', help="don't count any issues or pull requests that are still open", type=bool, default=False)
     args = parser.parse_args()
 
     repoPath = os.path.join(args.owner, args.repository)
@@ -106,7 +108,7 @@ def main():
         reviewDict = createReviewerDict(repoPath, ['reviewers.txt'])
     # Reviews key (json file path): multiline comment string
     commentDict = createCommentDict(repoPath)
-    
+
     thanked = 0
     noThanked = 0
     thankedSuccess = 0
@@ -115,6 +117,8 @@ def main():
         # Grab the user's first contribution to the project
         firstPR = value[0]
         issueDir = firstPR[1]
+        tflag = False
+        reviewComments = 0
         for c in [os.path.join(issueDir, x) for x in os.listdir(issueDir)]:
             # Ignore any files where the PR creator commented
             if c not in reviewDict.keys():
@@ -122,17 +126,41 @@ def main():
             if c not in commentDict.keys():
                 print("WARN", c, "not in all-comments.txt")
                 continue
+            reviewComments = reviewComments + 1
             comment = commentDict[c]
             if args.skip and re.search(args.skip, comment, flags=re.MULTILINE):
                 continue
             if re.search(args.regex, comment, flags=re.MULTILINE):
-                thanked = thanked + 1
-                if len(value) > args.num:
-                    thankedSuccess = thankedSuccess + 1
-            else:
-                noThanked = noThanked + 1
-                if len(value) > 1:
-                    noThankedSuccess = noThankedSuccess + 1
+                tflag = True
+        if tflag:
+            thanked = thanked + 1
+            if len(value) > args.num:
+                thankedSuccess = thankedSuccess + 1
+        else:
+            if args.printmissing:
+                for c in [os.path.join(issueDir, x) for x in os.listdir(issueDir)]:
+                    if c not in reviewDict.keys() or c not in commentDict.keys():
+                        continue
+                    print(commentDict[c])
+            # Skip any issues where no one but the submitter commented.
+            # This could be because the submitter closed it.
+            if not reviewComments:
+                if args.printmissing:
+                    print("Issue with no comments:", issueDir)
+                continue
+            # Skip any issues that have comments but are still open.
+            if args.skipopen:
+                for jsonFile in os.listdir(issueDir):
+                    if jsonFile.startswith('issue-'):
+                        with open(os.path.join(issueDir, jsonFile)) as issueFile:
+                            issueJson = json.load(issueFile)
+                if issueJson['state'] ==  'open':
+                    if args.printmissing:
+                        print("Issue still open:", issueDir)
+                        continue
+            noThanked = noThanked + 1
+            if len(value) > args.num:
+                noThankedSuccess = noThankedSuccess + 1
     print("Number of first time contributors exposed to word:", thanked)
     print("Number of first time contributors exposed to word that contributed again:", thankedSuccess)
     print("Number of first time contributors NOT exposed to word:", noThanked)

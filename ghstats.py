@@ -6,18 +6,18 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # This program creats statistics and graphs from
 # github interactions stored in the format:
-# 
+#
 # .
 # |-- github owner
 #     |-- repository name
@@ -46,6 +46,8 @@ from plotly.offline import download_plotlyjs, init_notebook_mode, iplot, offline
 from plotly.graph_objs import *
 from ghcategorize import jsonIsPullRequest, jsonIsPullRequestComment
 from ghreport import overwritehtml
+from ghsentimentstats import graphSentiment
+from ghsentimentstats import htmlSentimentStats
 
 def issueDir(longerDir):
     return re.sub(r'(.*?issue-[0-9]+).*', '\g<1>', longerDir)
@@ -234,7 +236,7 @@ def graphRampTime(deltas, nocontribs, graphtitle, xtitle, filename):
 
 # FIXME Maybe look for the word 'bot' in the user description?
 def getBots():
-    return ['bors', 'bors-servo', 'highfive', 'rust-highfive', 'rfcbot']
+    return ['bors', 'bors-servo', 'googlebot', 'highfive', 'k8s-ci-robot', 'k8s-merge-robot', 'k8s-reviewable', 'rust-highfive', 'rfcbot']
 
 def graphFrequency(data, graphtitle, xtitle, filename):
     botNames = getBots()
@@ -369,6 +371,14 @@ def createGraphs(owner, repo, htmldir):
                       os.path.join(repoPath, i[0] + 's-frequency.html'))
     coords = prOpenTimes(owner, repo)
     html['mergetime'] = graphMergeDelay(coords)
+    if 'all-comments-sentiment.txt' in os.listdir(repoPath):
+        html['sentimentwarning'] = '<p><b>**WARNING** The sentiment model is not very good at classifying sentences yet. Take these graphs with a giant lump of salt.</b></p>'
+        html['sentimentgraph'] = graphSentiment(repoPath, False)
+        html['sentimentstats'] = htmlSentimentStats(repoPath)
+    else:
+        html['sentimentwarning'] = ''
+        html['sentimentgraph'] = '<p>More data coming soon! Click another tab.</p>'
+        html['sentimentstats'] = ''
 
     # Use bootstrap to generate mobile-friendly webpages
     overwritehtml(htmldir, owner, repo, html)
